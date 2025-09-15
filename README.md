@@ -1,168 +1,127 @@
-VUQ Format Specification
-Verified Unified Qualified Documents
+# VUQ Format Specification
 
-The VUQ format (.vuq) is a secure, responsive, interactive document container that executes natively in web browsers using WebAssembly. VUQ documents provide cryptographic integrity/confidentiality and rich multimedia experiences across devices.
+## Verified Unified Qualified Documents
 
-Overview
+The **VUQ** format (`.vuq`) is a secure, responsive, interactive document container that executes in modern web browsers via WebAssembly. VUQ documents package content, code and policy into a single binary file and are designed to deliver rich multimedia experiences across devices while supporting strong integrity, authenticity and policy enforcement.
 
-VUQ addresses fundamental problems with current document formats:
+> **Status:** Draft 0.1 — media type registration submitted as `application/vnd.vuq`.
 
-Security: SHA-256 integrity with AES-256-GCM confidentiality
+---
 
-Responsiveness: Mobile-optimized, constraint-based layouts
+## Overview
 
-Interactivity: Full application capabilities inside a document container
+VUQ addresses limitations in current document/container formats:
 
-Protection: Copy detection and optional code/asset obfuscation
+* **Security** — integrity and authenticity using SHA‑256 and Ed25519; optional confidentiality using AES‑256‑GCM.
+* **Responsiveness** — constraint‑based layout engine for mobile through desktop.
+* **Interactivity** — embedded WebAssembly modules with a policy‑constrained JS environment.
+* **Protection** — optional copy‑tracking signals and content obfuscation at rest.
+* **Portability** — a single file bundles assets, code, and configuration.
 
-Portability: Single file encapsulates all assets and dependencies
+### Scope & Non‑Goals
 
-Technical Architecture
-File Structure
+* **In scope:** packaging, verification, sandboxed execution, responsive rendering, and optional policy controls (network, licensing, basic copy‑tracking).
+* **Not in scope:** preventing all forms of screen capture or out‑of‑band reproduction; guaranteeing confidentiality without keys; replacing DRM or legal/licensing frameworks.
+
+---
+
+## Technical Architecture
+
+### File Structure
+
+```
 .vuq Binary Container
 ├── Magic Header (8 bytes)           # 56 55 51 01 00 00 00 56 (hex)
 ├── Security Envelope                # Encrypted keys and policies
 ├── Content Manifest                 # Asset inventory and metadata
 ├── Encrypted Content Chunks         # Text, images, multimedia
 ├── WebAssembly Runtime (~400KB)     # Browser execution engine
-├── JavaScript Sandbox               # User code (optionally obfuscated)
+├── JavaScript Sandbox               # Policy-scoped user code (obfuscated)
 ├── Responsive Layout Rules          # Adaptive design constraints
 └── Integrity Hash Tree              # SHA-256 Merkle verification
+```
 
-Cryptographic Security
+### Cryptographic Primitives (Normative)
 
-VUQ uses standard, widely reviewed cryptographic primitives:
+* **Hash**: SHA‑256 (FIPS 180‑4) for content hashing and Merkle trees.
+* **AEAD**: AES‑256‑GCM (NIST SP 800‑38D) for optional content encryption.
+* **Signatures**: Ed25519 (RFC 8032) for publisher/document authenticity.
 
-Hash Algorithm: SHA-256 (FIPS 180-4)
+> Implementations **MUST** use constant‑time operations for key material where applicable and securely clear sensitive buffers.
 
-Encryption: AES-256-GCM (FIPS 197; NIST SP 800-38D) for content confidentiality and integrity
+### Browser Execution Model
 
-Digital Signatures: Ed25519 (RFC 8032) for authenticity verification
-
-Integrity: Merkle tree for tamper detection
-
-Browser Execution Model
+```
 Browser → WebAssembly Sandbox → Rust Core Engine → Content Rendering
                 ↓
-     JavaScript Execution Environment (Isolated, Policy-Enforced)
+        JavaScript Execution Environment
+        (Isolated & Policy‑Enforced)
+```
 
-Security Features
-Content Protection
+* WebAssembly engine provides memory isolation.
+* JS is limited to an allow‑listed API surface with no direct filesystem access; network access is denied by default and can be explicitly allow‑listed per policy.
 
-Encrypted at rest: All packaged content is encrypted within the container; source code and assets may additionally be obfuscated.
+---
 
-Copy Detection: Instance/ledger metadata enables detection of suspected unauthorized duplication (policy-driven response).
+## Security Considerations (Normative)
 
-Policy Enforcement: Configurable network access, sharing rules, and licensing.
+1. **Active content**: VUQ may embed executable WebAssembly and JavaScript. Viewers **MUST** execute content in a least‑privilege sandbox with CPU/memory/time limits and integrity checks before execution.
+2. **Integrity & authenticity**: A Merkle tree over content combined with a file‑level SHA‑256 hash and an Ed25519 signature allows tamper detection and source verification.
+3. **Confidentiality (optional)**: When used, AES‑256‑GCM provides encryption with integrity. Key management is out of scope for this spec.
+4. **Networking**: Default **DENY**. When enabled, only explicitly allow‑listed origins may be contacted; implementations **SHOULD** apply rate limiting.
+5. **Container & compression safety**: Implementations **MUST** validate sizes/offsets before allocation/decompression to mitigate zip‑bomb/DoS classes and reject malformed structures.
+6. **Side‑channels**: Use constant‑time crypto; avoid observable branching on secrets; clear keys after use.
+7. **Links/URIs**: Link following is disabled unless policy enables it; fragment identifiers are undefined for this media type (see below).
 
-Isolation: WebAssembly sandbox prevents direct OS/filesystem access.
+**References:** FIPS 180‑4; NIST SP 800‑38D; RFC 8032; RFC 6234; RFC 6838 §4.6.
 
-Copy Detection Policies (viewer behavior)
+---
 
-Deny render (prior instance): When a newer instance is detected, a previous instance may be refused by the viewer.
+## Interoperability Considerations
 
-Deny render (subsequent instance): When a duplicate is detected, the later-opened instance may be refused by the viewer.
+* **Endianness**: All multi‑byte integers are little‑endian.
+* **Versioning**: Header carries `major.minor`. Reject higher **major**; accept higher **minor** with unknown‑chunk ignore.
+* **Unknown chunks**: Ignore unknown **optional** chunks; fail on unknown **mandatory** chunks with a diagnostic.
+* **Magic**: Verify 8‑octet magic `56 55 51 01 00 00 00 56` prior to parsing.
+* **SHA‑256**: Use canonical padding/byte order per FIPS 180‑4.
+* **Default policy**: Network **off**; copy‑tracking **on** (if implemented by the viewer).
 
-Timed transfer: Rendering allowed after a policy-defined delay/transfer window.
+---
 
-Tracked copies: Rendering allowed; access is logged for audit.
+## Fragment Identifier Considerations
 
-Note: These are viewer/runtime behaviors. The format does not mandate external file deletion.
+**None.** This media type does not define fragment identifiers; processors **MUST NOT** assign semantics to URI `#fragments` for `.vuq` resources.
 
-Configuration Options
-Content Types
+---
 
-Document: Responsive text/media
+## Encoding Considerations
 
-Game: Highly interactive content using WebAssembly
+**binary** — NUL may appear; CR/LF may appear outside CRLF; lines may exceed 998 octets. See RFC 2045 §6 and RFC 6838 §4.8.
 
-Interactive Media: Rich multimedia experiences
+---
 
-Enterprise: Compliance/audit-focused content
+## Format Specification (Informative)
 
-Network Policies
+### File Header
 
-Isolated: No network access
-
-Outbound-only: Calls to allow-listed domains with rate limits
-
-Bidirectional: Full network with filtering/monitoring
-
-Protection Levels
-
-Unrestricted · Tracked · Licensed · Prevented (policy-driven denial as above)
-
-MIME Type Registration
-
-Media Type: application/vnd.vuq
-
-File Extension: .vuq
-
-Magic Number: 56 55 51 01 00 00 00 56 (hex)
-
-Encoding: binary
-
-Status: IANA registration submitted
-
-Security Considerations
-
-This media type can contain active content (WebAssembly modules and JavaScript). Implementations MUST:
-
-Execute in a least-privilege sandbox; no direct filesystem or OS API access.
-
-Verify integrity and signatures prior to processing.
-
-Deny network access by default; if enabled, limit to explicit allow-lists with rate-limiting.
-
-Enforce resource bounds (e.g., ≤ 512 MB memory, execution timeouts).
-
-Validate container metadata before allocation/decompression to mitigate “zip-bomb”/DoS patterns.
-
-Use constant-time cryptographic primitives and scrub sensitive buffers after use.
-
-Privacy/integrity services are provided by AES-256-GCM and Ed25519 signatures; transport-layer protections (e.g., TLS) are still RECOMMENDED for in-transit confidentiality.
-
-Normative references: FIPS 197; FIPS 180-4; NIST SP 800-38D; RFC 8032; RFC 6234; RFC 6838 §4.6.
-
-Interoperability Considerations
-
-Endianness: All multi-byte integers are little-endian.
-
-Versioning: Header includes major.minor. Reject unknown major; accept higher minor with unknown-chunk ignore.
-
-Chunk processing: Unknown optional chunks → ignore; unknown mandatory chunks → fail with a clear error.
-
-Magic: Verify the 8-octet magic 56 55 51 01 00 00 00 56 before parsing.
-
-SHA-256: Canonical per FIPS 180-4 (byte ordering/padding as specified).
-
-Policy defaults: Network off; copy tracking on, unless overridden.
-
-Fragment Identifier Considerations
-
-None. This media type does not define fragment identifiers; processors MUST NOT assign semantics to URI fragments.
-
-Encoding Considerations
-
-binary — NULs may appear; CR/LF may occur outside CRLF; lines may exceed 998 octets. See RFC 2045 §6; RFC 6838 §4.8.
-
-Format Specification
-File Header
+```
 Offset  | Size | Description
 --------|------|------------------------------------------
-0x00    | 3    | Magic "VUQ" (0x56, 0x55, 0x51)
+0x00    | 3    | Magic signature "VUQ" (0x56, 0x55, 0x51)
 0x03    | 1    | Format version (currently 0x01)
 0x04    | 3    | Reserved (0x00, 0x00, 0x00)
 0x07    | 1    | Verification byte (0x56)
 0x08    | 4    | Security envelope length
 0x0C    | 4    | Content manifest offset
-0x10    | 32   | SHA-256 hash of entire file content
+0x10    | 32   | SHA‑256 hash of entire file content
 0x30    | ...  | Security envelope (encrypted)
+```
 
-Chunk Structure
+### Chunk Structure
 
-All content is organized in individually encrypted chunks:
+All content is organized in per‑chunk records; chunks may be individually encrypted.
 
+```
 Chunk Header (12 bytes):
 - Chunk Type (4 bytes)
 - Chunk Length (4 bytes)
@@ -172,76 +131,81 @@ Chunk Header (12 bytes):
 Chunk Data (variable):
 - Encrypted content (if encryption enabled)
 - Raw content (if unencrypted)
+```
 
-IANA Considerations (Registration Template)
+---
 
-Type name: application
-Subtype name: vnd.vuq
+## IANA Considerations — Media Type Registration Template
 
-Required parameters: N/A
-Optional parameters: N/A
+**Type name:** application
 
-Encoding considerations: binary (see “Encoding Considerations”)
+**Subtype name:** vnd.vuq
 
-Security considerations: see “Security Considerations”
+**Required parameters:** N/A
 
-Interoperability considerations: see “Interoperability Considerations”
+**Optional parameters:** N/A
 
-Published specification: https://github.com/PhillipGimmi/vuq/blob/main/README.md
- (this document)
+**Encoding considerations:** binary (see above)
 
-Applications that use this media type: VUQ Creator/Packager; VUQ Viewer (browser/WebAssembly and/or native helper); Enterprise Admin/Dashboard. Third-party software treats .vuq as an opaque binary unless integrated with a VUQ runtime.
+**Security considerations:** See *Security Considerations* section.
 
-Fragment identifier considerations: None
+**Interoperability considerations:** See *Interoperability Considerations* section.
 
-Restrictions on usage: None (use binary-safe transfer encodings where required)
+**Published specification:** [https://github.com/PhillipGimmi/vuq/blob/main/README.md](https://github.com/PhillipGimmi/vuq/blob/main/README.md)
 
-Additional information:
+**Applications that use this media type:** VUQ Creator/Packager, VUQ Viewer (browser/WebAssembly and/or native helper), Enterprise Admin/Dashboard; third‑party software treats `.vuq` as an opaque binary unless integrated with the VUQ runtime.
 
-File extension(s): .vuq
+**Fragment identifier considerations:** None.
 
-Macintosh file type code(s): None
+**Restrictions on usage:** None (use binary‑safe transfer where required).
 
-Magic number(s): 56 55 51 01 00 00 00 56
+**Additional information:**
 
-Object Identifiers: None
+* File extension(s): `.vuq`
+* Macintosh file type code(s): None
+* Magic number(s): `56 55 51 01 00 00 00 56`
+* Object Identifiers (OIDs): None
+* Deprecated alias names: None
 
-Deprecated alias names: None
+**Intended usage:** LIMITED USE (primarily with VUQ software; not a general‑purpose interchange format)
 
-Intended usage: LIMITED USE (primarily with VUQ software; not a general-purpose interchange format)
+**Author/Change controller:** Phillip Gimmi — [phillip.gimmi@gmail.com](mailto:phillip.gimmi@gmail.com)
 
-Author/Change controller: Phillip Gimmi (phillip.gimmi@gmail.com
-)
+---
 
-Implementation Status
+## Implementation Status
 
-This repository contains the format specification for IANA registration and standardization purposes.
+This repository hosts the **format specification** for registration and interop. Reference code will be released separately.
 
-Available Documentation
+### Available Documentation
 
-Format specification (this document)
+* Format specification (this document)
+* Security model description
+* Cryptographic implementation notes
+* Interoperability requirements
 
-Security model description
+### Implementation Roadmap (Informative)
 
-Cryptographic implementation details
+* **Phase 1** — Core Rust engine compiled to WebAssembly
+* **Phase 2** — Browser viewer & creator tools
+* **Phase 3** — Enterprise features (policy/audit) and compliance tooling
 
-Interoperability requirements
+---
 
-Implementation Roadmap
+## Conformance Keywords
 
-Phase 1: Core Rust engine with WebAssembly compilation
+The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and **MAY** are to be interpreted as described in RFC 2119 and RFC 8174 when, and only when, they appear in all capitals.
 
-Phase 2: Browser viewer and creator tools
+---
 
-Phase 3: Enterprise features and compliance tools
+## Contact
 
-Contact
+**Format Owner:** Phillip Gimmi
+**Email:** [phillip.gimmi@gmail.com](mailto:phillip.gimmi@gmail.com)
+**Repository:** [https://github.com/PhillipGimmi/vuq](https://github.com/PhillipGimmi/vuq)
 
-Format Owner: Phillip Gimmi
-Email: phillip.gimmi@gmail.com
+---
 
-Repository: https://github.com/PhillipGimmi/vuq
+## License
 
-License
-
-The VUQ format specification is proprietary. Reference implementations may be released under separate license terms.
+The VUQ format specification is proprietary. Reference implementations and additional materials may be released under separate terms.
